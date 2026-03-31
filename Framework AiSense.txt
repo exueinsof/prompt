@@ -1,0 +1,1020 @@
+﻿devo realizzare un framework che si chiama Holos.
+Funzionalmente sintetizzo alcuni requisiti:
+*il sistema deve essere basato su container docker e proxy sia per l'accesso sia per l'autenticazione.
+* tutte le componenti software o siano piattaforme opensource o codice sviluppato ad hoc, devono girare nei propri container ed essere gestiti da portainer.
+*per accedere devo esporre una sola porta https valore 9777 sull'ip dell'host su cui girano i container con gateway Nginx (TLS), oauth2-proxy e Keycloak per SSO.
+* un unico portale Web (html/js o react/js) sui toni del blu che funge da Punto Unico di Accesso per tutti i tipi di utenti.
+* Il sistema deve essere multitenant
+* al primo avvio il sistema deve poter avviarsi con un unico utente amministratore ‘’superadmin’’ di tutto il framework e delle componenti o piattaforme che lo compongono con login “superadmin’’ e password ‘’holos’ e mail "superadmin@example.com" che deve essere un super amministratore con accesso globale a tutte le componenti e principalmente allo IAM keycloack dove saranno dichiarati gli utenti e ruoli e permessi.
+* Quando il superadmin del framework si logga la prima volta deve poter creare uno o più tenant e gli utenti amministratori di ogni tenant creato (utente admin password admin di default mail admin@example.com)
+* Ogni tenant può avere più asset, ogni asset ha un suo utente amministratore; il superadmin o l’amministratore di uno specifico tenant possono creare gli asset, gli amministratori degli asset, gli utenti degli asset; gli amministratori degli asset possono creare gli utenti del proprio asset; il superadmin o l’amministratore di un tenant di uno specifico asset o l’amministratore di uno specifico asset possono creare dispositivi per lo specifico asset.   
+* ogni volta che si crea un tenant, un asset o un dispositivo devono essere create le tabelle o le informazioni necessarie su tutti i db e le configurazioni di ogni componente del framework
+* Se il framework avrà come naming ad esempio holos.giuseppeceleste.it, ogni tenant potrebbe rispondere, come esempio, a tenant1.giuseppeceleste.it o a nometenant.dominiotenant.estensione nel caso sia personalizzato per uno specifico dominio; un asset avrà come nome per esempio asset1.tenant1.giuseppeceleste.it o nomeasset.nometenant.dominiotenant.estensione;
+* l’interfaccia grafica di amministrazione (html/js o react/js o suggerisci tu)(e quindi il backend che sia possibilmente o python o rust) deve poter avere una sezione in cui si definiscono (creano, modificano, disabilitano, duplicano, cancellano) i tenant, gli asset ed i dispositivi. Per ogni tenant e asset e dispositivo oltre alle informazioni caratteristiche, tipo anagrafica, localizzazione geografica, localizzazione della lingua, dobbiamo poter avere una tabella attributi definita su postgres e minio dove possiamo inserire attributi nella forma [chiave:valore] o allegare oggetti, tipo documenti,media, file etc, quindi mi aspetto una interfaccia grafica dove per ogni tenant e asset e dispositivo si possano creare degli attributi e inserire il loro valore o uploadare dei file associandoli. questo permette in fase di consultazione che se viene selezionato un tenant o un asset o un dispositivo avrò una finestra con la lista degli attributi ed il loro valore e una lista degli oggetti allegati che potrò fruire nella migliore modalità (ad esempio se un pdf posso scaricarlo o aprirlo per leggerlo, se un filmato o un file audio posso scaricarlo o vederlo o sentirlo e cosi via)
+* per i dispositivi in particolare vale lo stesso ragionamento devo avere degli attributi chiave valore o degli oggetti associati e delle soglie sempre nel formato chiave:valore che mi saranno utili per definire delle logiche di allarme, ad esempio un dispositivo che leggere temperatura potrebbe avere come attributi, temperatura_minima:20, temperatura_massima:25,temperatura_target:22,temperatura_notte:19, orario_notte_inizio:23:00, orario_notte_fine:08:00,controllo_manutenzione:20251012 e cosi via, potrebbe poi avere allegato un file pdf che è il manuale del sensore. la parte alleagati docuemntali o media va persistita tramite minio.
+* questa interfaccia deve poter anche gestire la creazione, modifica, cancellazione ed elencazione degli utenti con gruppi e ruoli,  quindi la possibilità di creare, modificare, cancellare, elencare sia gruppi sia ruoli. un utente può avere più gruppi e più ruoli.
+*questa applicazione è il cuore delle anagrafiche e degli asset del sistema, ogni cosa va dichiarata al suo interno poi quando viene salvata va propagata in tutte le applicazioni.
+* La gerarchia di Thingsboard (TB) permette di creare tenant, asset e dispositivi e dashboard che rispecchia la logica ed organizzazione di Holos descritta prima. Quindi quando creiamo una entità tenant o asset o dispositivo possiamo dichiararla dentro TB. Ad esempio quando creiamo un tenant e dentro il tenant un asset, deve essere creata e collegata una istanza specifica, creata a runtime, per quell’asset di home assistant, netbox, zabbix e apache nifi (nodered sarà installato come add-on di homeassistant, quindi ogni istanza di home assistant avrà il suo node-red).
+* Quindi avremo un keyclock, grafana, grafana loki, thingsboard, postgresql con postgis e timescale, minio, trino e superset come uniche istanze per tutto il framework che serviranno tutti i tenant e asset e dispositivi e per ogni asset invece una istanza di floable, homeassistant (con node-red come add/on ) netbox, zabbix e apache nifi per il digital twin e la gestione dei dispositivi.
+*un asset sarà quindi asset1.tenant1.giuseppeceleste.it:8123 o nomeasset.nometenant.dominiotenant.estensione:8123; apache nifi di un asset sarà homeassistant di un asset sarà quindi asset1.tenant1.giuseppeceleste.it:8001 o nomeasset.nometenant.dominiotenant.estensione:8001;
+
+   
+PROMPT PER L'AGENTE DI CODING
+Contesto
+L'obiettivo è sviluppare un framework architetturale completo, 100% open-source, scalabile e basato su microservizi, che realizzi la visione della piattaforma "HOLOS" descritta nel documento allegato. Questa piattaforma deve fungere da "Hub Olistico di Orchestrazione di Sistemi" , unificando la gestione di dati, processi e asset (digital twin) in un unico ecosistema coeso.
+Il framework deve superare la logica dei "silos" e implementare le seguenti capacità funzionali chiave identificate nel documento:
+1. Acquisizione Dati Eterogenea: Supporto modulare per protocolli IoT/IIoT (MQTT, OPC UA, ModBus) , sistemi enterprise (ERP, CRM) e Open Data.
+2. Data Lake / Lakehouse: Un repository centrale per dati grezzi, puliti e curati (Raw, Cleansed, Curated), con capacità di query federate.
+3. Digitalizzazione dei Processi: Un motore BPMN 2.0 per la modellazione e l'esecuzione di processi di business , con generazione di UI low-code per i task umani.
+4. Data Science Workbench: Un ambiente visuale low-code per la creazione di pipeline di analisi, dal feature engineering al machine learning e all'integrazione con LLM.
+5. Digital Twin (BIM/GIS): Una visualizzazione unificata 2D/3D che integra modelli BIM con dati GIS e sovrappone dati IoT in tempo reale.
+6. Governance e Semantica: Un framework di sicurezza RBAC e un'ontologia globale (RDF/OWL) per l'arricchimento semantico.
+
+Architettura e Stack Tecnologico (100% Open Source)
+L'intera architettura sarà basata su microservizi containerizzati. È fondamentale rispettare il seguente stack tecnologico e, soprattutto, il principio di infrastruttura condivisa:
+* Infrastruttura Comune (Condivisa):
+   * Database Principale: Un'unica istanza PostgreSQL.
+   * Estensioni DB: TimescaleDB (per tutti i dati time-series) e PostGIS (per i dati geospaziali).
+   * Object Storage: Un'unica istanza Minio (che fungerà da Data Lake ).
+   * Constraint Fondamentale: Tutti i servizi (Keycloak, ThingsBoard, Flowable, ecc.) devono essere configurati per utilizzare questa singola istanza PostgreSQL e Minio come backend di persistenza, per garantire l'unificazione dei dati.
+
+   Le componenti sono le seguenti:
+   1. Identità, Sicurezza & Audit (Compliance GDPR)
+      Keycloak: SSO, RBAC e gestione delle identità.
+      Grafana Loki: (Nuovo) Fondamentale per il GDPR. Centralizza tutti i log di sistema e degli accessi, permettendo di fare "forensics" e audit su chi ha fatto cosa e quando.
+   2. Comunicazione & Nervo Centrale (Real-time)
+      MQTT (Mosquitto): Il "sistema nervoso", MQTT permette il disaccoppiamento: i sensori pubblicano, i servizi (ThingsBoard, Netbox, Zabbix, HomeAssistant, NODE-RED, FastAPI, etc) si iscrivono.
+   3. Acquisizione Dati & Ingestione (Ingestion)
+      Apache NiFi: Per flussi dati complessi, trasformazioni ETL pesanti e integrazione file/DB.
+      Node-RED: Per logica "edge" rapida, protocolli industriali leggeri e automazioni veloci.
+      Home Assistant: Building Atuomation
+      Zabbix: Per il monitoraggio dello stato di salute degli asset IT (server, switch, connettività).
+   4. Persistenza Dati (Data Lakehouse)
+      Minio: Data Lake per oggetti (immagini, documenti degli asset, dump massivi).
+      Postgres + TimescaleDB + PostGIS: Il cuore dei dati strutturati (Metadati + Serie Temporali + Dati Geografici).
+   5. Query & Federazione
+      Trino: Il layer che permette di interrogare con un unico SQL sia i file su Minio che le tabelle su Postgres.
+   6. Processi & Asset Management
+       Flowable: Motore BPMN 2.0 per workflow
+       ThingsBoard Community Edition: Gestione pura dei device IoT, dashboard di controllo e telemetria.
+       Netbox: Fondamentale per il "Digital Twin" dell'infrastruttura fisica (cablaggi, rack, posizionamento negli armadi).
+   7. Data Science, AI & Sviluppo Custom
+      FastAPI (Python): Per creare microservizi e integrare modelli LLM/ML (Scikit-learn, Transformers).
+      React + React Flow: Per l'interfaccia utente e la visualizzazione di grafi o schemi logici.
+   8. BI & Digital Twin (Visualization)
+      Apache Superset: Analisi dati e dashboarding BI di alto livello.
+      Cesium.js & Three.js: Visualizzazione geografica (GIS) e modelli 3D (BIM/CAD) degli asset.
+
+linguaggi preferiti: Python, React, JavaScript, HTML, Rust
+
+Obiettivo e Requisiti Dettagliati
+Genera il codice e la configurazione per implementare il seguente framework, suddiviso in moduli di sviluppo.
+
+Modulo 1: Infrastruttura Core e IAM (Setup Iniziale)
+1. Docker Compose (docker-compose.yml):
+   * Crea un file docker-compose.yml che avvii i servizi di base:
+      * postgres-holos: Immagine Postgres con le estensioni TimescaleDB e PostGIS abilitate.
+      * minio-holos: Immagine Minio.
+      * keycloak-holos: Immagine Keycloak.
+   * Assicura che tutti i servizi siano sulla stessa rete Docker e che i dati di Postgres e Minio siano salvati su volumi persistenti.
+2. Configurazione Keycloak:
+   * Genera uno script (o istruzioni) per configurare un Realm "HOLOS".
+   * All'interno del Realm, crea i "Client" necessari per tutti gli altri servizi: thingsboard-client, superset-client, flowable-client, react-portal-client (per il frontend custom), etc per tutte le componenti.
+   * Configura i ruoli di base (es. holos-superadmin, holos-admin, holos-user).
+
+Modulo 2: Gestione Asset (Componente Custom + ThingsBoard + Keycloak)
+l’interfaccia grafica di amministrazione (html/js o react/js o suggerisci tu)(e quindi il backend che sia possibilmente o python o rust) deve poter avere una sezione in cui si definiscono (creano, modificano, disabilitano, duplicano, cancellano) i tenant, gli asset ed i dispositivi. Per ogni tenant e asset e dispositivo oltre alle informazioni caratteristiche, tipo anagrafica, localizzazione geografica, localizzazione della lingua, dobbiamo poter avere una tabella attributi definita su postgres e minio dove possiamo inserire attributi nella forma [chiave:valore] o allegare oggetti, tipo documenti,media, file etc, quindi mi aspetto una interfaccia grafica dove per ogni tenant e asset e dispositivo si possano creare degli attributi e inserire il loro valore o uploadare dei file associandoli. questo permette in fase di consultazione che se viene selezionato un tenant o un asset o un dispositivo avrò una finestra con la lista degli attributi ed il loro valore e una lista degli oggetti allegati che potrò fruire nella migliore modalità (ad esempio se un pdf posso scaricarlo o aprirlo per leggerlo, se un filmato o un file audio posso scaricarlo o vederlo o sentirlo e cosi via)
+Questo modulo implementa la gestione gerarchica di Tenant,Asset, dispositivi, attributi dei dispositivi.
+
+L'architettura prevede:
+1. Amministrazione: Un "Super Admin" accede al nostro portale React. Invece di tabelle, usa un'interfaccia React Flow per visualizzare e gestire la gerarchia. Può creare un nodo "Tenant", connettergli nodi "Asset" (Customer) e connettere nodi "Utente" agli Asset per gestirne i permessi. Queste azioni chiamano il nostro backend che opera su tutte le piattaforme tramite le API autorizzate admin per compiere le configurazioni. (tutto questo erogato dal modulo 2)
+2. Provisioning (Backend): Il nostro backend (modulo 2) riceve queste richieste e crea/aggiorna le entità corrispondenti sia in Keycloak (per l'identità) sia in ThingsBoard e le altre applicazioni.
+3. Autenticazione (Utente Finale): Un utente finale si autentica solo sul nostro portale (via Keycloak). Il backend genera un token di login temporaneo per ThingsBoard e reindirizza l'utente "magicamente" alla sua dashboard specifica.
+
+Possibile esempio di stack tecnologico:
+* Backend: Python 3.10+, FastAPI, httpx, python-keycloak, python-jose, uvicorn.
+* Frontend: React, axios, keycloak-js, reactflow.
+
+Requisiti Componenti Modulo 2:
+1. Backend (Python / FastAPI)
+Crea un file main_thingsboard_admin.py per il server FastAPI e un file .env (che includa le credenziali per Keycloak e ThingsBoard System Admin).
+File .env (Esempio)
+Plaintext
+# Keycloak (per la validazione token utente)
+KEYCLOAK_URL=http://localhost:8080
+KEYCLOAK_REALM=HOLOS
+KEYCLOAK_CLIENT_ID=react-portal-client
+KEYCLOAK_ISSUER_URL=http://localhost:8080/realms/HOLOS
+
+
+# Keycloak (per l'admin client del backend)
+KEYCLOAK_ADMIN_CLIENT_SECRET=IL_TUO_CLIENT_SECRET_BACKEND
+KEYCLOAK_ADMIN_CLIENT_ID=backend-service
+KEYCLOAK_ADMIN_USER=admin
+KEYCLOAK_ADMIN_PASSWORD=admin_password
+
+
+# Thingboard (credenziali SYSTEM ADMIN)
+THINGBOARD_URL=http://localhost:8081
+THINGBOARD_SYS_ADMIN_EMAIL=sysadmin@thingboard.org
+THINGBOARD_SYS_ADMIN_PASSWORD=sysadmin
+
+
+main_thingsboard_admin.py (Logica Principale)
+Genera il codice Python/FastAPI che implementi:
+* Setup: Inizializzazione di FastAPI, CORS, caricamento .env.
+* Sicurezza (Dependency): Una funzione get_current_admin_user che valida un token Keycloak (dall'header Authorization) e verifica che abbia il ruolo 'holos-admin'.
+* Helper: Funzioni asincrone per ottenere e cachare i token admin di Keycloak e ThingsBoard (System Admin).
+* Modelli Pydantic: CreateTenantRequest, CreateAssetRequest, CreateUserRequest, AssignUserToAssetRequest.
+* Endpoint API per React Flow (protetti da get_current_admin_user):
+   * GET /api/admin/graph-data/{tenant_id}: Recupera Tenant, Asset (Customer) e Utenti da ThingsBoard e li formatta per React Flow ({ "nodes": [...], "edges": [...] }).
+   * POST /api/admin/tenant: Riceve CreateTenantRequest, crea il Tenant in ThingsBoard, restituisce il nodo Tenant per React Flow.
+   * POST /api/admin/asset: Riceve CreateAssetRequest, crea il Customer (Asset) in ThingsBoard, restituisce il nodo Asset.
+   * POST /api/admin/user: Riceve CreateUserRequest, crea l'utente sia in Keycloak (per il login) sia in ThingsBoard (come "ombra"), restituisce il nodo User.
+   * POST /api/admin/assign-user-to-asset: Riceve AssignUserToAssetRequest, chiama l'API di ThingsBoard POST /api/customer/{assetId}/user/{userId}, restituisce il nuovo arco (edge).
+* Endpoint API per Utente Finale:
+   * GET /api/auth/thingboard-login (protetto da un get_current_user che valida qualsiasi utente).
+   * Logica: Estrae l'email dal token Keycloak; trova l'ID utente "ombra" in ThingsBoard; trova la dashboard dell'asset a cui l'utente è assegnato; genera un token temporaneo (POST /api/user/{userId}/token); restituisce { "thingboardToken": "...", "dashboardUrl": "http://.../dashboard/ID_DASHBOARD?token=" }.
+2. Frontend (React)
+Genera il codice per i seguenti componenti.
+auth.js (Configurazione Keycloak)
+JavaScript
+import Keycloak from 'keycloak-js';
+const keycloak = new Keycloak({
+    url: 'http://localhost:8080',
+    realm: 'HOLOS',
+    clientId: 'react-portal-client'
+});
+export default keycloak;
+
+
+AdminGraphPage.js (Gestione con React Flow)
+Un componente React che:
+* Usa reactflow (useNodesState, useEdgesState).
+* Usa useEffect per chiamare GET /api/admin/graph-data/{tenant_id} e popolare i nodi/archi.
+* Implementa handleConnect = (params) => { ... }:
+   * Controlla la validità della connessione (User -> Asset).
+   * Chiama axios.post('/api/admin/assign-user-to-asset', ...)
+   * Aggiunge l'arco localmente con setEdges((eds) => addEdge(params, eds)).
+* Implementa l'Aggiunta di Nodi (es. un bottone "Aggiungi Utente" che apre un modale, chiama POST /api/admin/user e aggiunge il nuovo nodo con setNodes).
+* Renderizza il canvas <ReactFlow ...>.
+UserRedirectPage.js (Pagina di Login Utente)
+Un componente React che:
+* Mostra "Autenticazione in corso...".
+* In useEffect, chiama axios.get('/api/auth/thingboard-login').
+* Alla risposta, costruisce l'URL finale (res.data.dashboardUrl + res.data.thingboardToken).
+* Esegue window.location.href = finalUrl;.
+________________
+
+
+Modulo 3: Motore di Processo (Flowable + BPMN)
+1. Integrazione Flowable:
+   * Aggiungi flowable-ui al docker-compose.yml.
+   * Configura Flowable per usare il PostgreSQL centrale.
+   * Configura Flowable per usare Keycloak per l'autenticazione (tramite le sue proprietà di configurazione LDAP/IDM).
+2. Frontend Processi (React):
+   * Crea un componente React "TaskList" che si integra con il portale principale.
+   * Questa UI deve usare l'API REST di Flowable per:
+      * Mostrare all'utente loggato (via Keycloak) i suoi "User Tasks".
+      * Renderizzare i form generati da Flowable (o form custom basati sulla definizione dei dati).
+      * Permettere il completamento dei task.
+3. Microservizio "Service Task" (FastAPI):
+   * Crea un main_servicetask_worker.py.
+   * Implementa un endpoint (es. POST /tasks/update-asset-status) che possa essere chiamato da un "Service Task" di Flowable.
+   * Esempio: Questo endpoint riceve un assetId e un status e chiama l'API di ThingsBoard per aggiornare un attributo dell'asset.
+Modulo 4: Data Lake e Acquisizione (NiFi & Trino)
+1. Integrazione NiFi/Node-RED:
+   * Aggiungi apache/nifi e nodered/node-red al docker-compose.yml.
+   * Configura NiFi/Node-RED per connettersi a Minio.
+   * Crea un flow di esempio in NiFi: "GetFile" -> "Transform" -> "PutS3" (scrivendo in un bucket "raw-zone" in Minio).
+   * Crea un flow di esempio in Node-RED: "MQTT In" -> "JSON Parse" -> "S3" (scrivendo in Minio).
+2. Integrazione Trino:
+   * Aggiungi trinodb/trino al docker-compose.yml.
+   * Configura Trino con due cataloghi:
+      * postgres-holos: per connettersi al DB PostgreSQL.
+      * minio-holos-iceberg: per connettersi a Minio (Data Lake) usando il formato Apache Iceberg per abilitare le capacità "Lakehouse".
+Modulo 5: BI e Digital Twin (Superset & Cesium/Three.js)
+1. Integrazione Superset:
+   * Aggiungi apache/superset al docker-compose.yml.
+   * Configura Superset per usare PostgreSQL come backend.
+   * Configura Superset per usare Keycloak per l'autenticazione.
+   * Configura Trino come Data Source principale in Superset, permettendo la creazione di dashboard che federano dati dal Lake (Minio) e dal DB (Postgres).
+2. Componente Digital Twin (React):
+   * Crea un nuovo componente React DigitalTwinViewer.js.
+   * Usa Cesium.js per renderizzare la mappa base (contesto GIS).
+   * Usa Three.js per caricare e renderizzare modelli 3D (es. glTF, o tramite ifc-loader per i file BIM) sovrapposti alla mappa Cesium.
+   * Integrazione Dati in Tempo Reale: Il componente deve:
+      * Accettare un assetId di ThingsBoard come prop.
+      * Usare l'API WebSocket o REST di ThingsBoard per sottoscrivere i dati telemetrici in tempo reale (es. temperatura, vibrazione) per quell'asset.
+      * Aggiornare dinamicamente la visualizzazione 3D (es. colorando un componente del modello 3D in rosso) quando i dati superano una soglia.
+Modulo 6: Data Science Workbench (Custom)
+1. Backend (FastAPI):
+   * Crea un main_datascience_workbench.py.
+   * Definisci endpoint per definire, eseguire e monitorare pipeline di analisi.
+   * Implementa un esecutore di "nodi" (Python):
+      * DataSourceNode: Esegue una query Trino.
+      * TransformNode: Esegue uno script Pandas.
+      * TrainModelNode: Esegue scikit-learn (es. RandomForestClassifier.fit()).
+      * LLMNode: Chiama un modello (es. transformers) per compiti come riassunto o analisi del sentiment.
+2. Frontend (React):
+   * Crea un componente DataSciencePipeline.js usando React Flow.
+   * L'utente deve poter trascinare i nodi (Data Source, Transform, Train).
+   * Salvando la pipeline, il frontend invia la struttura JSON al backend FastAPI.
+Modulo 7: Servizio Semantico e Open Data (Custom)
+1. Backend (FastAPI):
+   * Crea un main_semantic_service.py.
+   * Usa la libreria Python rdflib per gestire un'ontologia (RDF/OWL).
+   * Fornisci endpoint per mappare gli schemi dei dati (es. sensor_id_A -> platform:AssetIdentifier).
+2. Frontend (React):
+   * Crea un componente "Open Data Portal".
+   * Questo portale interroga i dati nella "Curated Zone" (via Trino/FastAPI).
+   * Fornisce opzioni di download che implementano il modello 5-Stelle:
+      * ***: CSV/JSON (formato non proprietario).
+      * ****: Usa URI stabili (provenienti dal Servizio Semantico).
+      * *****: Esporta come RDF (collegato ad altri dati).
+Genera il codice per i file docker-compose.yml, i file Python FastAPI per i Moduli 2, 3, 6, 7 e i componenti React per i Moduli 2, 3, 5, 6. Assicurati che tutto il codice Python sia asincrono (async/await) e che le configurazioni per l'infrastruttura condivisa (Postgres/Minio) e Keycloak siano centrali.
+
+
+PROMPT PER L'AGENTE DI CODING
+🎯 Contesto e Visione Strategica
+L'obiettivo è lo sviluppo end-to-end di HOLOS (Hub Olistico di Orchestrazione di Sistemi), un'architettura funzionale per la trasformazione digitale olistica. Il framework deve fungere da "Piattaforma Unificata di Orchestrazione di Dati e Processi", superando la logica dei silos tecnologici per abbracciare una visione sistemica.
+Il sistema che svilupperai dovrà:
+* Unificare l'intero ciclo di vita del dato, dall'acquisizione eterogenea alla conoscenza azionabile.
+* Fondere l'Information Technology (IT) e l'Operational Technology (OT) in un unico ecosistema.
+* Essere un'architettura 100% open-source, scalabile e multi-tenant.
+* Implementare un'interfaccia di portale unica (Punto Unico di Accesso) per tutti gli utenti, basata su un rigoroso controllo degli accessi (RBAC).
+📈 Requisiti Funzionali Chiave
+1. Punto Unico di Accesso: Un portale React (holos.giuseppeceleste.it) funge da interfaccia per tutti gli utenti e tutti i moduli (Amministrazione, IoT, Processi, BI, Digital Twin, Data Science).
+2. Bootstrapping: Al primo avvio, il sistema deve essere accessibile da un utente superadmin (login: superadmin, password: holos) con accesso globale e privilegi di amministratore di Keycloak.
+3. Gerarchia Multi-Tenant:
+   * Superadmin: Crea i Tenant e gli Amministratori di Tenant.
+   * Amministratore di Tenant: Gestisce il proprio tenant, crea Asset, Amministratori di Asset e Utenti di Asset.
+   * Amministratore di Asset: Gestisce il proprio asset e i suoi Utenti di Asset e Dispositivi.
+4. Provisioning Dinamico Per-Asset: La creazione di un Asset (es. asset1 nel tenant1) non è solo un'operazione di database. È un evento di orchestrazione che deve lanciare e configurare automaticamente un set di container dedicati per quell'asset (es. Home Assistant, Apache NiFi, Bridge HA-TB).
+5. DNS Dinamico: Il sistema deve supportare DNS dinamici per tutti i servizi, sia centrali che per-asset (es. keycloak.holos.giuseppeceleste.it, thingsboard.holos.giuseppeceleste.it e asset1.tenant1.holos.giuseppeceleste.it, ha-asset1.tenant1.holos.giuseppeceleste.it).
+6. Gestione Attributi Estesa: L'interfaccia deve permettere di arricchire semanticamente Tenant, Asset e Dispositivi con:
+   * Attributi Personalizzati (Chiave:Valore): Metadati (es. temperatura_minima: 20) salvati su Postgres, usati per logiche e soglie.
+   * File Allegati (Oggetti): Documenti, manuali, media (es. manuale_sensore.pdf) salvati su Minio e accessibili via UI.
+7. Data Flow Asset (HA -> TB): Le entità definite nell'Home Assistant di un asset (e listate in un file di configurazione) devono essere automaticamente provisionate come device in ThingsBoard e inviare telemetria (Uplink) e ricevere comandi (Downlink) via MQTT, tramite un bridge dedicato.
+________________
+
+
+🏛️ Architettura e Stack Tecnologico (100% Open Source)
+L'architettura è suddivisa in due stack, tutti gestiti da Portainer e orchestrati da un Reverse Proxy (Traefik).
+1. Stack Singleton Condiviso (Un'istanza per tutto il framework)
+Questi servizi sono centrali, multi-tenant e condivisi.
+Livello
+	Servizio
+	Scopo Principale
+	Configurazione DB/Storage
+	Gestione
+	Portainer
+	Gestione e orchestrazione dei container Docker.
+	-
+	Routing
+	Traefik
+	Reverse Proxy per DNS e routing dinamico.
+	-
+	Identità
+	Keycloak
+	SSO Gateway e Gestione RBAC per tutti i servizi.
+	postgres-holos
+	Piattaforma IoT
+	ThingsBoard CE
+	Gestione centrale Tenant, Device, Dashboard.
+	postgres-holos
+	Processi
+	Flowable
+	Motore BPMN 2.0 per processi di business.
+	postgres-holos
+	Data Lake
+	Minio
+	Object Storage (Raw, Cleansed, Curated Zone).
+	-
+	Database
+	PostgreSQL
+	Database centrale con estensioni TimescaleDB e PostGIS.
+	-
+	Query Layer
+	Trino
+	Query Federate (per interrogare Postgres + Minio).
+	-
+	BI & Reporting
+	Apache Superset
+	Dashboard e BI (connesso a Trino).
+	postgres-holos
+	Ingestione (C)
+	Apache NiFi
+	(Istanza Centrale) Per Open Data, ERP, API esterne.
+	postgres-holos
+	UI & Servizi
+	React / FastAPI
+	Il nostro Portale Unificato (Moduli 2 e 3).
+	postgres-holos
+	Esporta in Fogli
+2. Stack Dinamico Per-Asset (N istanze, 1 per ogni Asset)
+Questi servizi vengono lanciati a runtime dal Modulo 2 per ogni Asset creato.
+Servizio
+	Scopo Principale
+	Configurazione
+	Home Assistant
+	Automazione locale, interfaccia con hardware (Zigbee, ZWave).
+	Include Node-RED come Add-on.
+	Apache NiFi
+	(Istanza Per-Asset) Ingestione locale (ModBus, OPC UA) per l'asset.
+	-
+	Bridge HA-TB
+	(Python Custom) Bridge bi-direzionale MQTT tra HA e ThingsBoard.
+	-
+	Esporta in Fogli
+________________
+
+
+🚀 Sviluppo Modulare Dettagliato (Istruzioni per l'Agente)
+Genera il codice e la configurazione per i seguenti moduli.
+Modulo 1: Infrastruttura Core & Bootstrapping
+1. docker-compose.yml (Stack Singleton):
+   * Genera il file docker-compose.yml che avvii tutti i servizi dello Stack Singleton Condiviso (Portainer, Traefik, Keycloak, ThingsBoard, Flowable, Postgres+TS+GIS, Minio, Trino, Superset, NiFi-Centrale, e i nostri holos-portal-backend e holos-portal-frontend).
+   * Traefik: Configura Traefik per leggere le label Docker e mappare i DNS (es. Host(keycloak.holos.giuseppeceleste.it)).
+   * Persistenza: Assicura che Postgres, Minio, e tutti gli altri servizi stateful utilizzino volumi Docker persistenti.
+   * Infrastruttura Condivisa: Configura esplicitamente Keycloak, ThingsBoard, Flowable, Superset e NiFi per usare l'istanza postgres-holos come backend DB.
+2. Script di Bootstrapping (bootstrap.sh):
+   * Genera uno script che (usando curl e le API Admin) configuri Keycloak al primo avvio:
+      1. Creazione del Realm: HOLOS.
+      2. Creazione Utente: superadmin / holos.
+      3. Creazione Ruoli Realm: holos-superadmin, tenant-admin, asset-admin, asset-user.
+      4. Assegnazione Ruolo: Assegna holos-superadmin all'utente superadmin.
+      5. Creazione Client OIDC: Genera i client e i secret per holos-portal, thingsboard, flowable, superset, portainer.
+Modulo 2: Backend di Provisioning & Amministrazione (FastAPI)
+Genera il codice per il servizio holos-portal-backend (main_provisioning_admin.py). Questo è il cervello dell'orchestrazione.
+1. Modelli di Database (Pydantic & SQLModel/SQLAlchemy):
+   * Definisci i modelli per le tabelle custom:
+      * CustomAttributesKV (polimorfica: entity_type, entity_id, key, value).
+      * CustomAttributesFiles (polimorfica: entity_type, entity_id, filename, minio_path, mime_type).
+2. Sicurezza (Dipendenze FastAPI):
+   * Crea una dipendenza (get_current_user) che validi il token Keycloak.
+   * Crea dipendenze basate sui ruoli (es. require_role('holos-superadmin')).
+3. Endpoint API - Provisioning (Il Cuore):
+   * POST /api/v1/admin/tenants (Auth: holos-superadmin):
+      * Body: TenantCreate (name, domain, admin_email, admin_pass).
+      * Azioni:
+         1. (Keycloak) Crea l'utente Admin, il gruppo tenant-{name}, assegna l'utente al gruppo e al ruolo tenant-admin.
+         2. (ThingsBoard) Crea il Tenant.
+         3. (Postgres) Salva l'associazione nel DB.
+   * POST /api/v1/admin/assets (Auth: holos-superadmin o tenant-admin):
+      * Body: AssetCreate (name, tenant_id, admin_email, ...).
+      * Azioni:
+         1. (Keycloak/ThingsBoard) Crea utente/gruppo/ruolo per l'admin dell'asset.
+         2. (ThingsBoard) Crea il Customer (Asset) sotto il Tenant.
+         3. (Postgres) Crea la voce dell'asset nel DB.
+         4. (Portainer API): Chiama l'API di Portainer (POST /api/endpoints/.../docker/compose) per lanciare lo Stack Dinamico Per-Asset. Genera dinamicamente un mini-compose file con i 3 servizi (HA, NiFi, Bridge) e inietta le variabili d'ambiente necessarie (HA_TOKEN, URL del broker MQTT di ThingsBoard, credenziali del Tenant TB per il bridge, ecc.).
+         5. (Traefik): Assicura che i container lanciati abbiano le label Docker corrette affinché Traefik crei automaticamente le rotte (es. ha-asset1.tenant1.holos.giuseppeceleste.it).
+4. Endpoint API - Gestione Attributi Estesa:
+   * GET /api/v1/entities/{entity_type}/{entity_id}/attributes: Recupera tutti i K:V da CustomAttributesKV.
+   * POST /api/v1/entities/{entity_type}/{entity_id}/attributes: Aggiunge/Aggiorna K:V (es. per soglie device).
+   * GET /api/v1/entities/{entity_type}/{entity_id}/files: Lista i file da CustomAttributesFiles.
+   * POST /api/v1/entities/{entity_type}/{entity_id}/files: Riceve un upload, lo salva in Minio (path: holos/{entity_type}/{entity_id}/{filename}) e salva i metadati in Postgres.
+   * GET /api/v1/files/{file_id}/download: Genera un Pre-Signed URL di Minio e restituisce un 302 Redirect.
+5. Endpoint API - Gestione Utenti & SSO:
+   * POST /api/v1/admin/users: Crea l'utente in Keycloak e (come "ombra") in ThingsBoard.
+   * POST /api/v1/admin/assign-user-to-asset: Assegna un utente (Keycloak) a un Asset (ThingsBoard).
+   * GET /api/v1/auth/thingboard-login: (Per Utente Finale) Valida il token Keycloak, ottiene l'utente TB, genera un token JWT di TB e reindirizza l'utente alla sua dashboard.
+Modulo 2.5: Bridge Service Dinamico (HA -> TB)
+Genera il codice per il container holos-ha-tb-bridge.
+1. Dockerfile: Un Dockerfile Python (FROM python:3.10-slim) che installa websockets, paho-mqtt, requests.
+2. bridge.py (Basato sul tuo script):
+   * Configurazione (Solo ENV VAR): Rimuovi tutti i valori hardcoded. Il servizio deve essere configurato interamente da variabili d'ambiente (fornite dal Modulo 2 al momento del lancio): HA_URL, HA_TOKEN, TB_API_URL, TB_TENANT_USER, TB_TENANT_PASS, TB_MQTT_HOST, ENTITIES_FILE_PATH.
+   * Logica di Avvio:
+      * Legge entita.json da ENTITIES_FILE_PATH.
+      * Chiama provision_devices(): Si autentica all'API REST di TB con le credenziali del Tenant (TB_TENANT_USER) e crea tutti i device mancanti, salvando i loro access_token in devices.json.
+   * Logica Uplink (HA -> TB):
+      * La funzione ha_listener si connette al WebSocket di HA.
+      * Al state_changed di un'entità permessa, pubblica la telemetria (v1/devices/me/telemetry) e gli attributi (v1/devices/me/attributes) sul broker MQTT di TB, usando l'Access Token specifico di quel device.
+   * Logica Downlink (TB -> HA):
+      * La funzione setup_per_device_mqtt_listeners crea un client MQTT per ogni device, usando il suo Access Token per l'autenticazione.
+      * Ogni client si sottoscrive a v1/devices/me/rpc/request/+ e v1/devices/me/attributes.
+      * on_mqtt_message riceve il comando, e ha_call_service chiama l'API REST di HA per eseguire l'azione (es. light.turn_on).
+Modulo 3: Portale Unificato (Frontend React)
+Genera i componenti React per holos-portal-frontend.
+1. Componente auth.js: Configurazione di keycloak-js per il Realm HOLOS.
+2. Componente AdminHierarchyPage.js (React Flow):
+   * Scopo: Visualizzazione gerarchica e assegnazione.
+   * Usa useEffect per chiamare GET /api/v1/admin/graph-data (nuovo endpoint da creare nel Modulo 2) che restituisce nodi (Tenant, Asset, Device) e archi.
+   * Implementa onConnect per permettere il drag-and-drop di un nodo Utente su un nodo Asset (chiamando POST /api/v1/admin/assign-user-to-asset).
+3. Componente AdminManagementPage.js (CRUD Tradizionale):
+   * Interfaccia (es. Master-Detail con TreeView) per il management.
+   * Modali di Creazione: Form per POST /api/v1/admin/tenants e POST /api/v1/admin/assets.
+   * Pannello Dettagli (quando un'entità è selezionata):
+      * Tab 1: Configurazione Asset: Un editor di testo per modificare/caricare il file entita.json per il bridge di quell'asset.
+      * Tab 2: Attributi K:V: Un componente (CustomAttributes.js) che chiama .../attributes API. Mostra una tabella K:V editabile.
+      * Tab 3: File Allegati: Un componente (AttachedFiles.js) che chiama .../files API. Mostra un box di upload e una lista di file (da Minio) con link per il download/visualizzazione.
+4. Componente UserRedirectPage.js: Gestisce il redirect SSO a ThingsBoard (GET /api/v1/auth/thingboard-login).
+Modulo 4: Motore di Processi (Flowable)
+1. Frontend Processi (React):
+   * Crea un componente TaskList.js integrato nel portale React.
+   * Deve autenticarsi a Flowable (via OIDC/Keycloak).
+   * Chiama l'API REST di Flowable (/flowable-task/process-api/runtime/tasks?assignee={username}) per ottenere i "User Task".
+   * Rendering Low-Code: Per ogni task, recupera la sua definizione di form JSON da Flowable e la renderizza dinamicamente nell'UI React.
+2. Microservizio "Service Task" (FastAPI):
+   * Aggiungi al main_provisioning_admin.py (Modulo 2) endpoint per i Service Task.
+   * Esempio: POST /api/v1/tasks/check-device-threshold
+      * Body: {"deviceId": "...", "telemetryKey": "temperatura"}.
+      * Logica:
+         1. Chiama GET /api/v1/entities/device/{deviceId}/attributes per leggere temperatura_massima e temperatura_minima (dal Modulo 2).
+         2. Chiama l'API di ThingsBoard per ottenere il valore attuale di temperatura.
+         3. Restituisce un JSON (es. {"status": "ALARM"} o {"status": "OK"}) che il BPMN (Gateway Esclusivo) userà per decidere il flusso.
+Modulo 5: Data Lake & Query (Trino, NiFi)
+1. Configurazione Trino:
+   * Genera i file .properties per i cataloghi:
+      * postgres-holos.properties: Connessione al DB postgres-holos.
+      * minio-iceberg.properties: Connessione a Minio (S3) per query federate sui Parquet/Iceberg nel Data Lake (schema-on-read).
+2. Flow NiFi Esempio (Istanza Centrale):
+   * Genera uno script/descrizione per un flow NiFi che:
+      * GetHTTP (es. da un portale Open Data).
+      * TransformJSON.
+      * PutS3Object (scrive nel bucket raw-zone di Minio).
+Modulo 6: BI & Digital Twin (Superset & Cesium/Three.js)
+1. Configurazione Superset:
+   * Genera le istruzioni per configurare Trino come Data Source principale in Superset.
+2. Componente Digital Twin (React):
+   * Crea un componente DigitalTwinViewer.js.
+   * Usa Cesium.js per il contesto GIS (mappa 2D/3D).
+   * Usa Three.js e ifc-loader per caricare modelli BIM/3D.
+   * Logica di Dati Dinamica:
+      1. Carica i modelli 3D (BIM) e GIS (Mappa).
+      2. (Clic su un oggetto 3D): L'oggetto 3D (es. una pompa) ha un ID (deviceId-xyz).
+      3. Data Live: Sottoscriviti al WebSocket di ThingsBoard per deviceId-xyz e aggiorna il colore/stato del modello 3D in tempo reale.
+      4. Popup Dati: Mostra un popup con 3 tab:
+         * Live: Il grafico della telemetria da ThingsBoard.
+         * Attributi: Chiama GET /api/v1/entities/device/deviceId-xyz/attributes (Modulo 2) e mostra le soglie e i metadati.
+         * Documenti: Chiama GET /api/v1/entities/device/deviceId-xyz/files (Modulo 2) e mostra il link per scaricare manuale_pompa.pdf da Minio.
+Modulo 7: Data Science Workbench (React Flow)
+1. Frontend (React):
+   * Crea un componente DataSciencePipeline.js usando React Flow.
+   * L'utente trascina nodi: DataSource (Trino), Transform (Pandas), Train (Scikit-learn), LLM (Transformers), Programmable (Python).
+   * onClick(Esegui): Serializza il grafo React Flow in JSON.
+2. Backend (FastAPI):
+   * Crea main_datascience_workbench.py.
+   * POST /api/v1/ds/pipelines/execute: Riceve il JSON, lo valida e lo esegue.
+   * Implementa un esecutore di nodi Python che:
+      * DataSourceNode: Esegue pandas.read_sql(query, trino_connection).
+      * ProgrammableNode: Esegue exec(node.custom_python_code).
+      * LLMNode: Esegue transformers.pipeline("summarization", ...) per l'analisi del sentiment o il riassunto automatico.
+Modulo 8: Servizio Semantico e Open Data (RDFlib)
+1. Backend (FastAPI):
+   * Crea main_semantic_service.py.
+   * Usa rdflib per caricare un'ontologia holos.ttl.
+   * GET /api/v1/ontology/map: Mappa schemi eterogenei a un modello unificato (es. temp_c -> platform:Temperature).
+2. Frontend (React):
+   * Crea un componente OpenDataPortal.js.
+   * Fornisce opzioni di download (da Trino) che implementano il modello 5-Stelle:
+      * ★★★ (CSV/JSON).
+      * ★★★★ (Usa gli URI semantici come header).
+      * ★★★★★ (Esporta come RDF serializzato).
+
+
+Esempio di bridge fra home -assistant e thigsboard
+# --- Configurazione Logging ---
+import os
+import json
+import asyncio
+import logging
+import requests
+import websockets
+import paho.mqtt.client as mqtt
+from paho.mqtt import publish
+# --- Configurazione Logging ---
+
+
+# --- Configurazione Logging ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+# --- Caricamento Configurazione ---
+# Cerca le variabili d'ambiente (per Docker) o usa i valori di default (per test locale).
+# MODIFICA I VALORI DI DEFAULT QUI SOTTO PER I TUOI TEST IN VS CODE.
+HA_URL = os.getenv('HA_URL', 'ws://192.168.1.2:8123/api/websocket')
+HA_TOKEN = os.getenv('HA_TOKEN', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI2MTQ0YWY1M2Q0ZjI0NzU4OWQxYmY5NjA3OTUwYzViNiIsImlhdCI6MTc2MDYzNTIzOCwiZXhwIjoyMDc1OTk1MjM4fQ.QCJasVJVexUzN3QMseNTkCjB2-LNLjpep1MLKO4rzUc')
+
+
+TB_API_URL = os.getenv('TB_API_URL', 'http://192.168.1.8:8080')
+TB_USER = os.getenv('TB_USER', 'tenant@thingsboard.org')
+TB_PASSWORD = os.getenv('TB_PASSWORD', 'tenant')
+TB_MQTT_HOST = os.getenv('TB_MQTT_HOST', '192.168.1.8')
+TB_MQTT_PORT = int(os.getenv('TB_MQTT_PORT', '1883'))
+TB_GATEWAY_TOKEN = os.getenv('TB_GATEWAY_TOKEN', '7ti3cCCZkwa0I1LQrPJo')
+# This bridge uses per-device MQTT clients only (one client per ThingsBoard device).
+# The shared gateway mode was removed to keep routing of attribute/telemetry unambiguous.
+
+
+# --- Percorsi dei file di dati ---
+# Usa una cartella 'data' nella stessa directory dello script.
+# Questo funziona sia in locale che nel container con il volume mappato.
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(SCRIPT_DIR, 'data')
+ENTITIES_FILE = os.path.join(DATA_DIR, 'entita.json')
+DEVICES_FILE = os.path.join(DATA_DIR, 'devices.json')
+
+
+
+
+# --- Funzioni Helper (invariate) ---
+def load_json_file(path, default=None):
+    """Carica un file JSON in modo sicuro."""
+    try:
+        with open(path, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return default if default is not None else {}
+
+
+def save_json_file(path, data):
+    """Salva i dati in un file JSON."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2)
+
+
+def get_tb_jwt(session):
+    """Ottiene un token JWT da ThingsBoard."""
+    try:
+        response = session.post(
+            f"{TB_API_URL}/api/auth/login",
+            json={"username": TB_USER, "password": TB_PASSWORD}
+        )
+        response.raise_for_status()
+        return response.json()['token']
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Errore durante il login a ThingsBoard: {e}")
+        return None
+
+
+def provision_devices(allowed_entities, device_map):
+    """Crea i dispositivi su ThingsBoard se non esistono."""
+    logging.info("Avvio provisioning dei dispositivi su ThingsBoard...")
+    
+    with requests.Session() as session:
+        jwt_token = get_tb_jwt(session)
+        if not jwt_token:
+            return device_map
+
+
+        session.headers.update({'X-Authorization': f'Bearer {jwt_token}'})
+        
+        updated = False
+        for entity_id in allowed_entities:
+            if entity_id not in device_map:
+                logging.info(f"Il dispositivo per '{entity_id}' non esiste. Lo creo...")
+                try:
+                    # 1. Crea il dispositivo
+                    device_payload = {'name': entity_id, 'label': f'Dispositivo HA ({entity_id})'}
+                    response = session.post(f"{TB_API_URL}/api/device", json=device_payload)
+                    response.raise_for_status()
+                    device_id = response.json()['id']['id']
+                    
+                    # 2. Ottieni le credenziali (access token)
+                    cred_response = session.get(f"{TB_API_URL}/api/device/{device_id}/credentials")
+                    cred_response.raise_for_status()
+                    access_token = cred_response.json()['credentialsId']
+                    
+                    device_map[entity_id] = {
+                        'device_id': device_id,
+                        'access_token': access_token
+                    }
+                    updated = True
+                    logging.info(f"Dispositivo per '{entity_id}' creato con successo.")
+                    
+                except requests.exceptions.RequestException as e:
+                    error_message = e.response.text if e.response else str(e)
+                    logging.error(f"Errore nella creazione del dispositivo per '{entity_id}': {error_message}")
+
+
+    if updated:
+        save_json_file(DEVICES_FILE, device_map)
+    logging.info("Provisioning completato.")
+    return device_map
+
+
+
+
+def format_ha_state(state):
+    """Converte lo stato di HA in un formato adatto per ThingsBoard."""
+    if state is None:
+        return None
+    if state.lower() in ['on', 'true', 'locked']:
+        return True
+    if state.lower() in ['off', 'false', 'unlocked']:
+        return False
+    try:
+        return float(state)
+    except (ValueError, TypeError):
+        return state
+
+
+async def ha_listener(device_map, allowed_entities):
+    """Ascolta gli eventi di Home Assistant e li inoltra a ThingsBoard."""
+    auth_ok = False
+    subscribe_sent = False
+    msg_id = 1
+
+
+    uri = HA_URL
+    async for websocket in websockets.connect(uri):
+        logging.info("Connesso al WebSocket di Home Assistant.")
+        try:
+            async for message in websocket:
+                msg = json.loads(message)
+
+
+                if msg['type'] == 'auth_required':
+                    logging.info("Autenticazione richiesta da HA...")
+                    await websocket.send(json.dumps({
+                        'type': 'auth',
+                        'access_token': HA_TOKEN
+                    }))
+                
+                elif msg['type'] == 'auth_ok':
+                    logging.info("Autenticazione a HA riuscita.")
+                    auth_ok = True
+                    # Sottoscrivi agli eventi di cambio stato
+                    await websocket.send(json.dumps({
+                        'id': msg_id,
+                        'type': 'subscribe_events',
+                        'event_type': 'state_changed'
+                    }))
+                    subscribe_sent = True
+                    msg_id += 1
+
+
+                elif msg['type'] == 'auth_invalid':
+                    logging.error(f"Autenticazione a HA fallita: {msg['message']}")
+                    return # Termina in caso di errore di auth
+
+
+                elif subscribe_sent and msg['type'] == 'event':
+                    event_data = msg['event']['data']
+                    entity_id = event_data['entity_id']
+                    
+                    if entity_id in allowed_entities:
+                        new_state = format_ha_state(event_data.get('new_state', {}).get('state'))
+                        if new_state is None:
+                            continue
+                            
+                        device_info = device_map.get(entity_id)
+                        if not device_info:
+                            logging.warning(f"Ricevuto stato per '{entity_id}', ma non ci sono credenziali salvate.")
+                            continue
+
+
+                        access_token = device_info['access_token']
+                        
+                        try:
+                            # 1. Invia sempre la telemetria principale (state)
+                            telemetry_payload = json.dumps({'state': new_state})
+                            publish.single(
+                                topic="v1/devices/me/telemetry",
+                                payload=telemetry_payload,
+                                hostname=TB_MQTT_HOST,
+                                port=TB_MQTT_PORT,
+                                auth={'username': access_token, 'password': ''}
+                            )
+                            logging.info(f"Inviata telemetria per '{entity_id}': {telemetry_payload}")
+
+
+                            # 2. Controlla il tipo di entità prima di inviare gli attributi
+                            entity_domain = entity_id.split('.')[0]
+                            if entity_domain in ['light', 'switch', 'binary_sensor']:
+                                # Invia l'attributo 'running'
+                                attribute_payload_running = json.dumps({'running': new_state})
+                                publish.single(
+                                    topic="v1/devices/me/attributes",
+                                    payload=attribute_payload_running,
+                                    hostname=TB_MQTT_HOST,
+                                    port=TB_MQTT_PORT,
+                                    auth={'username': access_token, 'password': ''}
+                                )
+                                
+                                # Invia l'attributo 'open'
+                                attribute_payload_open = json.dumps({'open': new_state})
+                                publish.single(
+                                    topic="v1/devices/me/attributes",
+                                    payload=attribute_payload_open,
+                                    hostname=TB_MQTT_HOST,
+                                    port=TB_MQTT_PORT,
+                                    auth={'username': access_token, 'password': ''}
+                                )
+                                logging.info(f"Inviati attributi 'running' e 'open' per '{entity_id}': {new_state}")
+
+
+                        except Exception as e:
+                            logging.error(f"Errore durante l'invio MQTT a ThingsBoard per '{entity_id}': {e}")
+                            
+        except websockets.ConnectionClosed:
+            logging.warning("Connessione a HA persa. Tento di riconnettermi tra 5 secondi...")
+            await asyncio.sleep(5)
+            continue
+
+
+
+
+
+
+def get_ha_rest_url():
+    """Deriva l'URL REST di Home Assistant dalla HA_URL websocket se necessario."""
+    url = HA_URL
+    if url.startswith('ws://'):
+        url = 'http://' + url[len('ws://'):]
+    elif url.startswith('wss://'):
+        url = 'https://' + url[len('wss://'):]
+    # rimuovi il path /api/websocket se presente
+    if url.endswith('/api/websocket'):
+        url = url[:-len('/api/websocket')]
+    # rimuovi eventuale trailing slash
+    return url.rstrip('/')
+
+
+
+
+def ha_call_service(entity_id, state_bool):
+    """Chiama il servizio di Home Assistant per attivare/disattivare l'entità.
+
+
+    Usa il service domain.turn_on/turn_off quando possibile, altrimenti imposta lo stato direttamente.
+    """
+    base = get_ha_rest_url()
+    headers = {'Authorization': f'Bearer {HA_TOKEN}', 'Content-Type': 'application/json'}
+    domain = entity_id.split('.')[0]
+
+
+    # Domain-specific service mapping
+    try:
+        if domain == 'cover':
+            service = 'open_cover' if state_bool else 'close_cover'
+            service_url = f"{base}/api/services/{domain}/{service}"
+            resp = requests.post(service_url, headers=headers, json={"entity_id": entity_id}, timeout=10)
+            if resp.ok:
+                logging.info(f"Chiamato servizio {domain}.{service} per {entity_id} -> {state_bool}")
+                return True
+            else:
+                logging.warning(f"Servizio {domain}.{service} per {entity_id} ha restituito {resp.status_code}: {resp.text}")
+
+
+        elif domain == 'climate':
+            # Try to set HVAC mode as a best-effort: True -> 'heat', False -> 'off'
+            hvac_mode = 'heat' if state_bool else 'off'
+            service_url = f"{base}/api/services/{domain}/set_hvac_mode"
+            resp = requests.post(service_url, headers=headers, json={"entity_id": entity_id, "hvac_mode": hvac_mode}, timeout=10)
+            if resp.ok:
+                logging.info(f"Chiamato climate.set_hvac_mode per {entity_id} -> {hvac_mode}")
+                return True
+            else:
+                logging.warning(f"Servizio climate.set_hvac_mode per {entity_id} ha restituito {resp.status_code}: {resp.text}")
+
+
+        else:
+            service = 'turn_on' if state_bool else 'turn_off'
+            service_url = f"{base}/api/services/{domain}/{service}"
+            resp = requests.post(service_url, headers=headers, json={"entity_id": entity_id}, timeout=10)
+            if resp.ok:
+                logging.info(f"Chiamato servizio {domain}.{service} per {entity_id} -> {state_bool}")
+                return True
+            else:
+                logging.warning(f"Servizio {domain}.{service} per {entity_id} ha restituito {resp.status_code}: {resp.text}")
+
+
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Errore chiamando servizio HA per {entity_id}: {e}")
+
+
+    # fallback: imposta lo stato direttamente
+    try:
+        state_val = 'on' if state_bool else 'off'
+        resp2 = requests.post(f"{base}/api/states/{entity_id}", headers=headers, json={"state": state_val}, timeout=10)
+        if resp2.status_code >= 200 and resp2.status_code < 300:
+            logging.info(f"Impostato stato diretto {entity_id} -> {state_val}")
+            return True
+        else:
+            logging.error(f"Impostazione stato diretto per {entity_id} fallita: {resp2.status_code} {resp2.text}")
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Errore impostando stato diretto HA per {entity_id}: {e}")
+
+
+    return False
+
+
+
+
+def _parse_rpc_payload(payload):
+    """Prova a estrarre il parametro utile dal payload RPC di ThingsBoard."""
+    try:
+        data = json.loads(payload)
+    except Exception:
+        return payload
+
+
+    # Common TB RPC shapes: {"method":"set","params":true} o {"params": true}
+    if isinstance(data, dict):
+        if 'params' in data:
+            return data['params']
+        if 'value' in data:
+            return data['value']
+        # se è un dict con una singola chiave, prova a restituirne il valore
+        if len(data) == 1:
+            return list(data.values())[0]
+    return data
+
+
+
+
+def on_mqtt_message(client, userdata, msg):
+    """Callback MQTT per RPC da ThingsBoard. user data contiene l'entity_id associata al client."""    
+    try:
+        payload = msg.payload.decode('utf-8')
+    except Exception:
+        payload = str(msg.payload)
+    logging.info(f"Ricevuto RPC MQTT: topic={msg.topic} payload={payload}")
+
+
+    # Parse and extract target entity or telemetry/attributes payload
+    # TB can send different payload shapes:
+    # - RPC: {"method":"set","params": true} or {"params": true}
+    # - Attributes push: {"key": value} or via RPC-like wrapper
+    # - Telemetry push (from server-side) often: {"ts":123456789,"values": {"running": true}}
+    param = None
+    try:
+        parsed = json.loads(payload)
+    except Exception:
+        parsed = None
+
+
+    # If telemetry envelope (ts + values)
+    if isinstance(parsed, dict) and 'values' in parsed and isinstance(parsed['values'], dict):
+        param = parsed['values']
+    elif isinstance(parsed, dict) and ('params' in parsed or 'value' in parsed):
+        # RPC-style
+        param = _parse_rpc_payload(payload)
+    elif isinstance(parsed, dict):
+        # attribute push or simple dict
+        param = parsed
+    else:
+        # fallback to RPC parser (handles simple true/false payloads)
+        param = _parse_rpc_payload(payload)
+    # if this client was created per-device, userdata will hold entity_id
+    target_entity = None
+    if isinstance(userdata, str) and userdata:
+        target_entity = userdata
+    if isinstance(param, dict):
+        # common keys: entity_id, device, target
+        for k in ('entity_id', 'device', 'target'):
+            if k in param:
+                target_entity = param[k]
+                break
+        # if params itself contains a value boolean under 'value' or 'params'
+        if target_entity is None and 'value' in param:
+            # leave target_entity None
+            pass
+    elif isinstance(param, str):
+        # payload might be just the entity_id (rare)
+        if '.' in param:
+            target_entity = param
+
+
+    if not target_entity:
+        # try to extract from payload
+        if isinstance(param, dict):
+            for k in ('entity_id', 'device', 'target'):
+                if k in param:
+                    target_entity = param[k]
+                    break
+        elif isinstance(param, str) and '.' in param:
+            target_entity = param
+
+
+    if not target_entity:
+        logging.warning(f"MQTT message ricevuto senza field 'entity_id' e senza userdata; non posso instradare: {payload}")
+        return
+    # determine desired boolean/value
+    # param may be dict params, or an attributes dict (running/open/state)
+    val = None
+    if isinstance(param, dict):
+        # If attribute/telemetry update contains keys like 'running'/'open'/'state', prefer them
+        for key in ('running', 'open', 'state'):
+            if key in param:
+                val = param[key]
+                break
+        # otherwise fallback to params/value/command
+        if val is None:
+            if 'params' in param:
+                val = param['params']
+            elif 'value' in param:
+                val = param['value']
+            elif 'command' in param:
+                val = param['command']
+    else:
+        val = param
+
+
+    desired = None
+    if isinstance(val, bool):
+        desired = val
+    elif isinstance(val, (int, float)):
+        desired = bool(val)
+    elif isinstance(val, str):
+        low = val.strip().lower()
+        if low in ['true', 'on', '1', 'yes']:
+            desired = True
+        elif low in ['false', 'off', '0', 'no']:
+            desired = False
+
+
+    if desired is None:
+        logging.warning(f"Messaggio MQTT per {target_entity} con payload non interpretabile come booleano: {param}")
+        return
+
+
+    # call HA
+    success = ha_call_service(target_entity, desired)
+    if success:
+        logging.info(f"Applicato stato da ThingsBoard a HA: {target_entity} -> {desired}")
+    else:
+        logging.error(f"Impossibile applicare stato da ThingsBoard a HA per {target_entity}")
+
+
+
+
+def setup_per_device_mqtt_listeners(device_map):
+    """Crea un client MQTT per ogni device (usando il suo access token) e sottoscrive RPC/attributes.
+    Questo permette di ricevere attribute updates destinati esattamente a quel device, usando userdata per mappare entity_id.
+    """
+    clients = []
+    for entity_id, info in device_map.items():
+        access_token = info.get('access_token')
+        if not access_token:
+            logging.warning(f"Nessun access_token per {entity_id}, salto la creazione del client MQTT per questo device")
+            continue
+
+
+        client_id_safe = f"ha_bridge_{entity_id.replace('/', '_').replace('.', '_')}"
+        client = mqtt.Client(client_id=client_id_safe)
+        client.username_pw_set(username=access_token, password='')
+        # set userdata so handler can know the device/entity target
+        client.user_data_set(entity_id)
+        client.on_message = on_mqtt_message
+
+
+        def make_on_connect(eid):
+            def on_connect(c, userdata, flags, rc):
+                if rc == 0:
+                    logging.info(f"MQTT client per {eid} connesso. Sottoscrivo RPC e attributes.")
+                    c.subscribe('v1/devices/me/rpc/request/+')
+                    c.subscribe('v1/devices/me/attributes')
+                    c.subscribe('v1/devices/me/telemetry')
+                else:
+                    logging.error(f"MQTT client per {eid} fallito la connessione rc={rc}")
+            return on_connect
+
+
+        client.on_connect = make_on_connect(entity_id)
+        try:
+            client.connect(TB_MQTT_HOST, TB_MQTT_PORT, 60)
+            client.loop_start()
+            clients.append(client)
+        except Exception as e:
+            logging.error(f"Impossibile connettere MQTT client per {entity_id}: {e}")
+
+
+    return clients
+
+
+
+
+async def main():
+    """Funzione principale per avviare il bridge."""
+    if 'INCOLLA_QUI' in HA_TOKEN or not all([TB_USER, TB_PASSWORD]):
+        logging.error("Configurazione mancante! Modifica i valori di default nello script (come HA_TOKEN).")
+        return
+
+
+    allowed_entities = load_json_file(ENTITIES_FILE, [])
+    if not allowed_entities:
+        logging.error(f"Il file '{ENTITIES_FILE}' è vuoto o non trovato. Nessuna entità da monitorare.")
+        return
+        
+    device_map = load_json_file(DEVICES_FILE)
+    device_map = provision_devices(allowed_entities, device_map)
+    
+    # Use per-device MQTT clients exclusively
+    clients = setup_per_device_mqtt_listeners(device_map)
+    try:
+        await ha_listener(device_map, allowed_entities)
+    finally:
+        for client in clients:
+            client.loop_stop()  # Stop MQTT clients
+
+
+
+
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
